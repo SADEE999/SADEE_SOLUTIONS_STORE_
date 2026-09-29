@@ -1,9 +1,8 @@
-name: SADEE SOLUTIONS STORE
+name: SADEE SOLUTIONS - Deploy Website
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -24,24 +23,35 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show website files
+      - name: Build clean Pages folder
+        shell: bash
         run: |
-          echo "Repository checked out successfully"
-          echo "Current directory: $(pwd)"
-          echo "Top-level files:"
-          find . -maxdepth 2 -type f | sort | head -100
+          set -e
 
-      - name: Configure GitHub Pages
+          rm -rf dist
+          mkdir -p dist
+
+          cp index.html app.js styles.css config.js dist/
+          cp -r assets dist/assets
+          cp -r admin dist/admin
+
+          echo "Pages root:"
+          find dist -maxdepth 2 -type f | sort
+
+          test -f dist/index.html
+          test -f dist/admin/index.html
+
+      - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload website
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: ./dist
 
-      - name: Deploy website
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
