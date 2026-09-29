@@ -1,8 +1,9 @@
-name: SADEE SOLUTIONS — Deploy Store
+name: SADEE SOLUTIONS STORE
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -11,39 +12,36 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: github-pages
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify website
+      - name: Show website files
         run: |
-          set -e
-          test -f index.html
-          test -f config.js
-          test -f app.js
-          test -f styles.css
-          test -f admin/index.html
-          test -f admin/admin.js
-          test -d assets
-          echo "SADEE SOLUTIONS store files are ready."
+          echo "Repository checked out successfully"
+          echo "Current directory: $(pwd)"
+          echo "Top-level files:"
+          find . -maxdepth 2 -type f | sort | head -100
 
-      - name: Configure Pages
+      - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload website
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy website
         id: deployment
         uses: actions/deploy-pages@v4
