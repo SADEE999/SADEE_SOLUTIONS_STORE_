@@ -12,12 +12,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: sadee-pages
+  group: sadee-solutions-pages
   cancel-in-progress: true
 
 jobs:
   deploy:
-    name: Extract ZIP and Deploy
+    name: Rebuild ZIP and Deploy
     runs-on: ubuntu-latest
 
     environment:
@@ -26,23 +26,68 @@ jobs:
 
     steps:
 
+      # =========================
+      # CHECKOUT
+      # =========================
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Find ZIP
+
+      # =========================
+      # REBUILD ORIGINAL ZIP
+      # =========================
+
+      - name: Rebuild ZIP From Parts
         shell: bash
         run: |
           set -e
 
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+          echo "===== ZIP PARTS ====="
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found."
+          ls -lh *.part* || true
+
+          if [ ! -f "SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part01" ]; then
+            echo "❌ Part 01 missing"
             exit 1
           fi
 
-          echo "Found ZIP: $ZIP_FILE"
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+          if [ ! -f "SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part02" ]; then
+            echo "❌ Part 02 missing"
+            exit 1
+          fi
+
+          echo "Joining ZIP parts..."
+
+          cat \
+          SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part01 \
+          SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part02 \
+          > website.zip
+
+          echo "✅ ZIP rebuilt"
+
+          ls -lh website.zip
+
+
+      # =========================
+      # TEST ZIP
+      # =========================
+
+      - name: Test ZIP
+        shell: bash
+        run: |
+          set -e
+
+          echo "Testing ZIP..."
+
+          unzip -t website.zip
+
+          echo "✅ ZIP is valid"
+
+
+      # =========================
+      # EXTRACT
+      # =========================
 
       - name: Extract ZIP
         shell: bash
@@ -52,25 +97,42 @@ jobs:
           rm -rf extracted
           mkdir -p extracted
 
-          unzip -o "$ZIP_FILE" -d extracted
+          unzip -o website.zip -d extracted
 
-          echo "ZIP extracted successfully."
+          echo "✅ ZIP extracted"
+
+
+      # =========================
+      # FIND ORIGINAL WEBSITE
+      # =========================
 
       - name: Find Website Root
         shell: bash
         run: |
           set -e
 
-          INDEX_FILE=$(find extracted -type f -name "index.html" | head -n 1)
+          echo "Searching for index.html..."
+
+          INDEX_FILE=$(find extracted \
+            -type f \
+            -name "index.html" \
+            | head -n 1)
 
           if [ -z "$INDEX_FILE" ]; then
-            echo "ERROR: index.html not found inside ZIP."
-            echo "Files found:"
-            find extracted -maxdepth 4 -type f
+
+            echo "❌ index.html not found"
+
+            echo "===== EXTRACTED FILES ====="
+
+            find extracted \
+              -maxdepth 6 \
+              -type f \
+              | sort
+
             exit 1
           fi
 
-          echo "Found:"
+          echo "✅ index.html found:"
           echo "$INDEX_FILE"
 
           WEBSITE_ROOT=$(dirname "$INDEX_FILE")
@@ -81,41 +143,101 @@ jobs:
           rm -rf dist
           mkdir -p dist
 
+          # COPY ORIGINAL WEBSITE EXACTLY
           cp -a "$WEBSITE_ROOT"/. dist/
 
-      - name: Check Admin Panel
+
+      # =========================
+      # VERIFY ORIGINAL DESIGN
+      # =========================
+
+      - name: Verify Website
         shell: bash
         run: |
-          echo "===== WEBSITE CHECK ====="
+          set -e
 
-          if [ -f "dist/index.html" ]; then
-            echo "OK: index.html"
-          else
-            echo "ERROR: index.html missing"
+          echo ""
+          echo "===== FINAL WEBSITE ====="
+
+          find dist \
+            -maxdepth 6 \
+            -type f \
+            | sort
+
+          echo ""
+
+          if [ ! -f "dist/index.html" ]; then
+            echo "❌ index.html missing"
             exit 1
           fi
 
-          if [ -f "dist/admin/index.html" ]; then
-            echo "OK: admin/index.html"
+          echo "✅ Main website found"
+
+
+          if [ -d "dist/admin" ]; then
+            echo "✅ Admin folder found"
           else
-            echo "WARNING: admin/index.html not found"
+            echo "⚠️ Admin folder not found"
           fi
 
-          if [ -f "dist/config.js" ]; then
-            echo "OK: config.js"
+
+          if [ -d "dist/assets" ]; then
+            echo "✅ Assets folder found"
           fi
+
+
+          VIDEO_FOUND=false
+
+          while IFS= read -r file
+          do
+            echo "🎥 Video: $file"
+            VIDEO_FOUND=true
+          done < <(
+            find dist \
+              -type f \
+              \( \
+                -iname "*.mp4" \
+                -o -iname "*.webm" \
+                -o -iname "*.mov" \
+                -o -iname "*.m4v" \
+              \)
+          )
+
+
+          if [ "$VIDEO_FOUND" = true ]; then
+            echo "✅ Video files found"
+          else
+            echo "ℹ️ No video file detected"
+          fi
+
 
           echo ""
-          echo "===== FINAL FILES ====="
-          find dist -maxdepth 4 -type f | sort
+          echo "================================"
+          echo "✅ ORIGINAL WEBSITE READY"
+          echo "================================"
+
+
+      # =========================
+      # GITHUB PAGES
+      # =========================
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+
+
+      # =========================
+      # UPLOAD
+      # =========================
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
+
+
+      # =========================
+      # DEPLOY
+      # =========================
 
       - name: Deploy to GitHub Pages
         id: deployment
