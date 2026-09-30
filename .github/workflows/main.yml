@@ -1,713 +1,84 @@
-const sb = window.supabase.createClient(
-  window.SUPABASE_URL,
-  window.SUPABASE_ANON_KEY
-);
-
-const $ = (id) => document.getElementById(id);
-
-let products = [];
-let orders = [];
-let busy = false;
-
-/* =========================
-   LOGIN
-========================= */
-
-$("loginBtn").onclick = async () => {
-
-  if (busy) return;
-
-  const email = $("email").value.trim();
-  const password = $("password").value;
-
-  if (!email || !password) {
-    $("loginMsg").textContent =
-      "Enter admin email and password.";
-    return;
-  }
-
-  busy = true;
-
-  const btn = $("loginBtn");
-  btn.disabled = true;
-  btn.textContent = "SIGNING IN...";
-
-  $("loginMsg").textContent = "";
-
-  try {
-
-    const { data, error } =
-      await sb.auth.signInWithPassword({
-        email,
-        password
-      });
-
-    if (error) {
-      $("loginMsg").textContent =
-        "Login failed: " + error.message;
-
-      btn.disabled = false;
-      btn.textContent = "LOGIN";
-      busy = false;
-      return;
-    }
-
-    if (!data.session) {
-      $("loginMsg").textContent =
-        "Login succeeded but no session was created.";
-
-      btn.disabled = false;
-      btn.textContent = "LOGIN";
-      busy = false;
-      return;
-    }
-
-    $("loginMsg").textContent =
-      "Checking admin access...";
-
-    const allowed = await verifyAdmin();
-
-    if (!allowed) {
-      await sb.auth.signOut();
-
-      $("loginMsg").textContent =
-        "This account is not registered as an admin.";
-
-      btn.disabled = false;
-      btn.textContent = "LOGIN";
-      busy = false;
-      return;
-    }
-
-    $("loginMsg").textContent =
-      "Admin verified. Loading dashboard...";
-
-    $("login").classList.add("hidden");
-    $("app").classList.remove("hidden");
-
-    await load();
-
-  } catch (err) {
-
-    console.error(err);
-
-    $("loginMsg").textContent =
-      "Error: " + (err.message || err);
-
-  } finally {
-
-    btn.disabled = false;
-    btn.textContent = "LOGIN";
-    busy = false;
-  }
-};
-
-
-/* =========================
-   ADMIN VERIFICATION
-========================= */
-
-async function verifyAdmin() {
-
-  const { data: sessionData } =
-    await sb.auth.getSession();
-
-  const session = sessionData?.session;
-
-  if (!session) {
-    return false;
-  }
-
-  const { data, error } =
-    await sb.rpc("is_admin");
-
-  if (error) {
-
-    console.error("Admin RPC error:", error);
-
-    $("loginMsg").textContent =
-      "Admin verification failed: " +
-      error.message;
-
-    return false;
-  }
-
-  return data === true;
-}
-
-
-/* =========================
-   INITIALIZE
-========================= */
-
-async function init() {
-
-  const { data, error } =
-    await sb.auth.getSession();
-
-  if (error) {
-    console.error(error);
-    return;
-  }
-
-  const session = data.session;
-
-  if (!session) {
-
-    $("login").classList.remove("hidden");
-    $("app").classList.add("hidden");
-
-    return;
-  }
-
-  const allowed = await verifyAdmin();
-
-  if (!allowed) {
-
-    await sb.auth.signOut();
-
-    $("login").classList.remove("hidden");
-    $("app").classList.add("hidden");
-
-    $("loginMsg").textContent =
-      "This account is not registered as an admin.";
-
-    return;
-  }
-
-  $("login").classList.add("hidden");
-  $("app").classList.remove("hidden");
-
-  await load();
-}
-
-
-/* =========================
-   LOGOUT
-========================= */
-
-$("logout").onclick = async () => {
-
-  await sb.auth.signOut();
-
-  location.reload();
-};
-
-
-/* =========================
-   LOAD DATA
-========================= */
-
-async function load() {
-
-  try {
-
-    const productsResult =
-      await sb
-        .from("products")
-        .select("*")
-        .order("created_at", {
-          ascending: false
-        });
-
-    if (productsResult.error) {
-      throw productsResult.error;
-    }
-
-    products = productsResult.data || [];
-
-
-    const ordersResult =
-      await sb
-        .from("orders")
-        .select("*")
-        .order("created_at", {
-          ascending: false
-        });
-
-    if (ordersResult.error) {
-      throw ordersResult.error;
-    }
-
-    orders = ordersResult.data || [];
-
-    render();
-
-    $("orderCount").textContent =
-      orders.length;
-
-  } catch (error) {
-
-    console.error(error);
-
-    alert(
-      "Dashboard loading error:\n" +
-      error.message
-    );
-  }
-}
-
-
-/* =========================
-   RENDER
-========================= */
-
-function render() {
-
-  const q =
-    ($("adminSearch").value || "")
-      .toLowerCase()
-      .trim();
-
-  const list =
-    products.filter((p) =>
-      (
-        (p.name || "") +
-        " " +
-        (p.category || "")
-      )
-        .toLowerCase()
-        .includes(q)
-    );
-
-
-  $("count").textContent =
-    products.length;
-
-  $("activeCount").textContent =
-    products.filter(
-      (p) => p.active !== false
-    ).length;
-
-
-  $("table").innerHTML =
-    list.map((p) => {
-
-      const image =
-        p.image_url ||
-        p.image ||
-        "";
-
-      return `
-        <div class="product">
-
-          <img
-            src="${esc(image)}"
-            onerror="this.style.display='none'"
-          >
-
-          <div>
-
-            <h3>
-              ${esc(p.name)}
-            </h3>
-
-            <div class="muted">
-              ${esc(p.category || "")}
-              · Rs.${Number(
-                p.price || 0
-              ).toLocaleString()}
-              · ${
-                p.active !== false
-                  ? "Active"
-                  : "Hidden"
-              }
-            </div>
-
-          </div>
-
-          <div class="actions">
-
-            <button
-              onclick="edit('${p.id}')"
-            >
-              Edit
-            </button>
-
-            <button
-              class="danger"
-              onclick="del('${p.id}')"
-            >
-              Delete
-            </button>
-
-          </div>
-
-        </div>
-      `;
-
-    }).join("") ||
-
-    "<p class='muted'>No products.</p>";
-
-
-  $("orders").innerHTML =
-    orders.map((o) => {
-
-      return `
-        <div class="order">
-
-          <b>
-            ${esc(
-              o.product_name || "Product"
-            )}
-          </b>
-
-          · Rs.${Number(
-            o.price || 0
-          ).toLocaleString()}
-
-          <br>
-
-          <span class="muted">
-
-            ${esc(
-              o.customer_name || ""
-            )}
-
-            ·
-
-            ${esc(
-              o.customer_phone || ""
-            )}
-
-            ·
-
-            ${o.created_at
-              ? new Date(
-                  o.created_at
-                ).toLocaleString()
-              : ""}
-
-          </span>
-
-        </div>
-      `;
-
-    }).join("") ||
-
-    "<p class='muted'>No recorded orders yet.</p>";
-}
-
-
-/* =========================
-   ESCAPE HTML
-========================= */
-
-function esc(value) {
-
-  return String(
-    value ?? ""
-  ).replace(
-    /[&<>"']/g,
-    (m) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    }[m])
-  );
-}
-
-
-/* =========================
-   SEARCH
-========================= */
-
-$("adminSearch").oninput =
-  render;
-
-
-/* =========================
-   NEW PRODUCT
-========================= */
-
-$("newBtn").onclick =
-  () => openForm();
-
-
-$("close").onclick =
-  () =>
-    $("modal")
-      .classList.remove("show");
-
-
-/* =========================
-   PRODUCT FORM
-========================= */
-
-function openForm(p = null) {
-
-  $("modal")
-    .classList.add("show");
-
-  $("formTitle").textContent =
-    p
-      ? "Edit Product"
-      : "Add Product";
-
-  $("pid").value =
-    p?.id || "";
-
-  $("pname").value =
-    p?.name || "";
-
-  $("pcat").value =
-    p?.category || "";
-
-  $("pprice").value =
-    p?.price || "";
-
-  $("pnote").value =
-    p?.price_note || "";
-
-  $("pdesc").value =
-    p?.description || "";
-
-  $("pfeatures").value =
-    (p?.features || [])
-      .join("\n");
-
-  $("pimageurl").value =
-    p?.image_url ||
-    p?.image ||
-    "";
-
-  $("pfeatured").checked =
-    !!p?.featured;
-
-  $("pactive").checked =
-    p
-      ? p.active !== false
-      : true;
-
-  $("saveMsg").textContent =
-    "";
-}
-
-
-/* =========================
-   EDIT
-========================= */
-
-window.edit = (id) => {
-
-  const product =
-    products.find(
-      (p) => p.id === id
-    );
-
-  if (product) {
-    openForm(product);
-  }
-};
-
-
-/* =========================
-   DELETE
-========================= */
-
-window.del = async (id) => {
-
-  if (
-    !confirm(
-      "Delete this product?"
-    )
-  ) {
-    return;
-  }
-
-  const { error } =
-    await sb
-      .from("products")
-      .delete()
-      .eq("id", id);
-
-  if (error) {
-
-    alert(
-      "Delete failed:\n" +
-      error.message
-    );
-
-    return;
-  }
-
-  await load();
-};
-
-
-/* =========================
-   SAVE PRODUCT
-========================= */
-
-$("save").onclick =
-  async () => {
-
-    const id =
-      $("pid").value;
-
-    let image =
-      $("pimageurl")
-        .value
-        .trim();
-
-    const file =
-      $("pimage").files[0];
-
-
-    $("save").disabled =
-      true;
-
-    $("save").textContent =
-      "SAVING...";
-
-
-    try {
-
-      if (file) {
-
-        const path =
-          `${crypto.randomUUID()}-${
-            file.name.replace(
-              /[^a-zA-Z0-9._-]/g,
-              "_"
-            )
-          }`;
-
-
-        const upload =
-          await sb
-            .storage
-            .from("product-media")
-            .upload(
-              path,
-              file,
-              {
-                upsert: false
-              }
-            );
-
-
-        if (upload.error) {
-          throw upload.error;
-        }
-
-
-        image =
-          sb
-            .storage
-            .from("product-media")
-            .getPublicUrl(path)
-            .data
-            .publicUrl;
-      }
-
-
-      const row = {
-
-        name:
-          $("pname")
-            .value
-            .trim(),
-
-        category:
-          $("pcat")
-            .value
-            .trim(),
-
-        price:
-          Number(
-            $("pprice")
-              .value || 0
-          ),
-
-        price_note:
-          $("pnote")
-            .value
-            .trim(),
-
-        description:
-          $("pdesc")
-            .value
-            .trim(),
-
-        features:
-          $("pfeatures")
-            .value
-            .split("\n")
-            .map(
-              (x) => x.trim()
-            )
-            .filter(Boolean),
-
-        image_url:
-          image,
-
-        featured:
-          $("pfeatured")
-            .checked,
-
-        active:
-          $("pactive")
-            .checked
-      };
-
-
-      let result;
-
-
-      if (id) {
-
-        result =
-          await sb
-            .from("products")
-            .update(row)
-            .eq("id", id);
-
-      } else {
-
-        result =
-          await sb
-            .from("products")
-            .insert(row);
-      }
-
-
-      if (result.error) {
-        throw result.error;
-      }
-
-
-      $("modal")
-        .classList.remove(
-          "show"
-        );
-
-      await load();
-
-
-    } catch (error) {
-
-      console.error(error);
-
-      $("saveMsg").textContent =
-        error.message;
-
-    } finally {
-
-      $("save").disabled =
-        false;
-
-      $("save").textContent =
-        "SAVE PRODUCT";
-    }
-  };
-
-
-/* =========================
-   START
-========================= */
-
-init();
+name: SADEE SOLUTIONS - ZIP DEPLOY
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: sadee-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Find ZIP File
+        shell: bash
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+          echo "Found ZIP: $ZIP_FILE"
+
+      - name: Extract ZIP
+        shell: bash
+        run: |
+          rm -rf extracted
+          mkdir -p extracted
+          unzip -o "$ZIP_FILE" -d extracted
+          echo "ZIP extracted successfully"
+
+      - name: Find Website
+        shell: bash
+        run: |
+          INDEX_FILE=$(find extracted -type f -name "index.html" | head -n 1)
+
+          echo "Index file:"
+          echo "$INDEX_FILE"
+
+          if [ -z "$INDEX_FILE" ]; then
+            echo "index.html not found inside ZIP"
+            exit 1
+          fi
+
+          WEBSITE_ROOT=$(dirname "$INDEX_FILE")
+
+          echo "Website root:"
+          echo "$WEBSITE_ROOT"
+
+          rm -rf dist
+          mkdir -p dist
+
+          cp -a "$WEBSITE_ROOT"/. dist/
+
+      - name: Show Final Files
+        shell: bash
+        run: |
+          echo "===== FINAL WEBSITE ====="
+          find dist -maxdepth 4 -type f | sort
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy Website
+        id: deployment
+        uses: actions/deploy-pages@v4
