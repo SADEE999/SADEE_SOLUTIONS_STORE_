@@ -1,4 +1,4 @@
-name: SADEE SOLUTIONS - Build & Deploy
+name: SADEE SOLUTIONS PRO MAX - Deploy
 
 on:
   push:
@@ -12,12 +12,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: sadee-solutions-pages
+  group: sadee-solutions-pro-max
   cancel-in-progress: true
 
 jobs:
   deploy:
-    name: Build Website & Deploy
+    name: Build & Deploy PRO MAX
     runs-on: ubuntu-latest
 
     environment:
@@ -26,45 +26,61 @@ jobs:
 
     steps:
 
-      # 1. Get repository files
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Find uploaded ZIP
-      - name: Find Website ZIP
+      # --------------------------------------------------
+      # FIND ZIP
+      # --------------------------------------------------
+      - name: Find PRO MAX ZIP
         shell: bash
         run: |
           set -e
 
-          echo "===== REPOSITORY FILES ====="
+          echo "===================================="
+          echo " SEARCHING FOR WEBSITE ZIP"
+          echo "===================================="
+
           find . -maxdepth 3 -type f | sort
 
-          ZIP_FILE=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
+          ZIP_FILE=$(find . \
+            -maxdepth 3 \
+            -type f \
+            -iname "*.zip" \
+            | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "❌ No ZIP file found"
+            echo "❌ No ZIP file found."
             exit 1
           fi
 
-          echo "✅ ZIP found:"
+          echo "✅ ZIP FOUND:"
           echo "$ZIP_FILE"
 
           cp "$ZIP_FILE" website.zip
 
-      # 3. Test ZIP
-      - name: Test ZIP
+          ls -lh website.zip
+
+      # --------------------------------------------------
+      # TEST ZIP
+      # --------------------------------------------------
+      - name: Validate ZIP
         shell: bash
         run: |
           set -e
 
-          echo "===== TESTING ZIP ====="
+          echo "===================================="
+          echo " VALIDATING ZIP"
+          echo "===================================="
 
           unzip -t website.zip
 
-          echo "✅ ZIP is valid"
+          echo "✅ ZIP validation successful"
 
-      # 4. Extract ZIP
-      - name: Extract Website
+      # --------------------------------------------------
+      # EXTRACT
+      # --------------------------------------------------
+      - name: Extract PRO MAX Website
         shell: bash
         run: |
           set -e
@@ -74,15 +90,19 @@ jobs:
 
           unzip -o website.zip -d extracted
 
-          echo "✅ ZIP extracted"
+          echo "✅ Website extracted"
 
-      # 5. Find original website root
+      # --------------------------------------------------
+      # FIND INDEX
+      # --------------------------------------------------
       - name: Detect Website Root
         shell: bash
         run: |
           set -e
 
-          echo "===== SEARCHING index.html ====="
+          echo "===================================="
+          echo " SEARCHING FOR INDEX.HTML"
+          echo "===================================="
 
           INDEX_FILE=$(find extracted \
             -type f \
@@ -90,76 +110,131 @@ jobs:
             | head -n 1)
 
           if [ -z "$INDEX_FILE" ]; then
-            echo "❌ index.html not found"
+            echo "❌ index.html was not found."
 
+            echo ""
             echo "===== EXTRACTED FILES ====="
-            find extracted -maxdepth 8 -type f | sort
+
+            find extracted \
+              -maxdepth 8 \
+              -type f \
+              | sort
 
             exit 1
           fi
 
-          echo "✅ index.html:"
+          echo "✅ index.html found:"
           echo "$INDEX_FILE"
 
           WEBSITE_ROOT=$(dirname "$INDEX_FILE")
 
-          echo "===== WEBSITE ROOT ====="
+          echo ""
+          echo "Website root:"
           echo "$WEBSITE_ROOT"
 
           rm -rf dist
           mkdir -p dist
 
-          # Copy original website WITHOUT redesigning it
+          # Preserve the uploaded website files exactly.
           cp -a "$WEBSITE_ROOT"/. dist/
 
-          echo "✅ Original website copied"
+          echo "✅ Website copied to dist"
 
-      # 6. Verify everything
-      - name: Verify Website
+      # --------------------------------------------------
+      # VERIFY CUSTOMER SITE
+      # --------------------------------------------------
+      - name: Verify Customer Website
         shell: bash
         run: |
           set -e
 
-          echo ""
-          echo "================================"
-          echo "       WEBSITE CHECK"
-          echo "================================"
+          echo "===================================="
+          echo " CUSTOMER WEBSITE CHECK"
+          echo "===================================="
 
-          if [ ! -f "dist/index.html" ]; then
-            echo "❌ index.html missing"
-            exit 1
-          fi
+          test -f dist/index.html
 
           echo "✅ index.html"
 
-          if [ -f "dist/styles.css" ]; then
+          if [ -f dist/styles.css ]; then
             echo "✅ styles.css"
           fi
 
-          if [ -f "dist/app.js" ]; then
+          if [ -f dist/app.js ]; then
             echo "✅ app.js"
           fi
 
-          if [ -f "dist/config.js" ]; then
+          if [ -f dist/config.js ]; then
             echo "✅ config.js"
           fi
 
-          if [ -d "dist/admin" ]; then
-            echo "✅ admin folder"
-
-            if [ -f "dist/admin/index.html" ]; then
-              echo "✅ admin/index.html"
-            fi
-          else
-            echo "⚠️ admin folder not found"
+          if [ -f dist/supabase.sql ]; then
+            echo "✅ supabase.sql"
           fi
 
-          if [ -d "dist/assets" ]; then
-            echo "✅ assets folder"
+      # --------------------------------------------------
+      # VERIFY ADMIN
+      # --------------------------------------------------
+      - name: Verify Admin Panel
+        shell: bash
+        run: |
+          set -e
+
+          echo "===================================="
+          echo " ADMIN PANEL CHECK"
+          echo "===================================="
+
+          if [ ! -d "dist/admin" ]; then
+            echo "❌ admin folder missing"
+            exit 1
           fi
+
+          echo "✅ admin folder"
+
+          if [ ! -f "dist/admin/index.html" ]; then
+            echo "❌ admin/index.html missing"
+            exit 1
+          fi
+
+          echo "✅ admin/index.html"
+
+          if [ -f "dist/admin/admin.js" ]; then
+            echo "✅ admin/admin.js"
+          fi
+
+          if [ -f "dist/admin/admin.css" ]; then
+            echo "✅ admin/admin.css"
+          fi
+
+      # --------------------------------------------------
+      # CHECK MEDIA
+      # --------------------------------------------------
+      - name: Verify Images & Videos
+        shell: bash
+        run: |
+          set -e
+
+          echo "===================================="
+          echo " MEDIA CHECK"
+          echo "===================================="
 
           echo ""
-          echo "===== MEDIA FILES ====="
+          echo "Images:"
+
+          find dist \
+            -type f \
+            \( \
+              -iname "*.png" \
+              -o -iname "*.jpg" \
+              -o -iname "*.jpeg" \
+              -o -iname "*.webp" \
+              -o -iname "*.gif" \
+              -o -iname "*.svg" \
+            \) \
+            | sort || true
+
+          echo ""
+          echo "Videos:"
 
           find dist \
             -type f \
@@ -168,46 +243,45 @@ jobs:
               -o -iname "*.webm" \
               -o -iname "*.mov" \
               -o -iname "*.m4v" \
-              -o -iname "*.png" \
-              -o -iname "*.jpg" \
-              -o -iname "*.jpeg" \
-              -o -iname "*.webp" \
             \) \
             | sort || true
 
-          echo ""
-          echo "================================"
-          echo "       BUILD SUCCESS"
-          echo "================================"
-
-      # 7. Configure GitHub Pages
+      # --------------------------------------------------
+      # CONFIGURE PAGES
+      # --------------------------------------------------
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      # 8. Upload website
+      # --------------------------------------------------
+      # UPLOAD ARTIFACT
+      # --------------------------------------------------
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
-      # 9. Deploy
+      # --------------------------------------------------
+      # DEPLOY
+      # --------------------------------------------------
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
 
-      # 10. Show URLs
-      - name: Show Website URLs
+      # --------------------------------------------------
+      # FINAL STATUS
+      # --------------------------------------------------
+      - name: Deployment Complete
         shell: bash
         run: |
           echo ""
           echo "=============================================="
-          echo "       SADEE SOLUTIONS DEPLOYED"
+          echo "     SADEE SOLUTIONS PRO MAX LIVE"
           echo "=============================================="
           echo ""
-          echo "Customer Website:"
+          echo "🌐 CUSTOMER WEBSITE:"
           echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE/"
           echo ""
-          echo "Admin Panel:"
+          echo "🔐 ADMIN PANEL:"
           echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE/admin/"
           echo ""
           echo "=============================================="
