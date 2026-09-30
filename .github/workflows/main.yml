@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   deploy:
+    name: Extract ZIP and Deploy
     runs-on: ubuntu-latest
 
     environment:
@@ -24,36 +25,53 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Find ZIP File
+      - name: Find ZIP
         shell: bash
         run: |
+          set -e
+
           ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No ZIP file found."
+            exit 1
+          fi
+
           echo "Found ZIP: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Extract ZIP
         shell: bash
         run: |
+          set -e
+
           rm -rf extracted
           mkdir -p extracted
-          unzip -o "$ZIP_FILE" -d extracted
-          echo "ZIP extracted successfully"
 
-      - name: Find Website
+          unzip -o "$ZIP_FILE" -d extracted
+
+          echo "ZIP extracted successfully."
+
+      - name: Find Website Root
         shell: bash
         run: |
+          set -e
+
           INDEX_FILE=$(find extracted -type f -name "index.html" | head -n 1)
 
-          echo "Index file:"
-          echo "$INDEX_FILE"
-
           if [ -z "$INDEX_FILE" ]; then
-            echo "index.html not found inside ZIP"
+            echo "ERROR: index.html not found inside ZIP."
+            echo "Files found:"
+            find extracted -maxdepth 4 -type f
             exit 1
           fi
+
+          echo "Found:"
+          echo "$INDEX_FILE"
 
           WEBSITE_ROOT=$(dirname "$INDEX_FILE")
 
@@ -65,20 +83,40 @@ jobs:
 
           cp -a "$WEBSITE_ROOT"/. dist/
 
-      - name: Show Final Files
+      - name: Check Admin Panel
         shell: bash
         run: |
-          echo "===== FINAL WEBSITE ====="
+          echo "===== WEBSITE CHECK ====="
+
+          if [ -f "dist/index.html" ]; then
+            echo "OK: index.html"
+          else
+            echo "ERROR: index.html missing"
+            exit 1
+          fi
+
+          if [ -f "dist/admin/index.html" ]; then
+            echo "OK: admin/index.html"
+          else
+            echo "WARNING: admin/index.html not found"
+          fi
+
+          if [ -f "dist/config.js" ]; then
+            echo "OK: config.js"
+          fi
+
+          echo ""
+          echo "===== FINAL FILES ====="
           find dist -maxdepth 4 -type f | sort
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Website
+      - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
-      - name: Deploy Website
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
