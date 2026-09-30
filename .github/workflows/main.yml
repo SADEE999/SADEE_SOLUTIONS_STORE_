@@ -1,4 +1,4 @@
-name: SADEE SOLUTIONS - ZIP DEPLOY
+name: SADEE SOLUTIONS - Build & Deploy
 
 on:
   push:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Rebuild ZIP and Deploy
+    name: Build Website & Deploy
     runs-on: ubuntu-latest
 
     environment:
@@ -26,70 +26,45 @@ jobs:
 
     steps:
 
-      # =========================
-      # CHECKOUT
-      # =========================
-
+      # 1. Get repository files
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-
-      # =========================
-      # REBUILD ORIGINAL ZIP
-      # =========================
-
-      - name: Rebuild ZIP From Parts
+      # 2. Find uploaded ZIP
+      - name: Find Website ZIP
         shell: bash
         run: |
           set -e
 
-          echo "===== ZIP PARTS ====="
+          echo "===== REPOSITORY FILES ====="
+          find . -maxdepth 3 -type f | sort
 
-          ls -lh *.part* || true
+          ZIP_FILE=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
 
-          if [ ! -f "SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part01" ]; then
-            echo "❌ Part 01 missing"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ No ZIP file found"
             exit 1
           fi
 
-          if [ ! -f "SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part02" ]; then
-            echo "❌ Part 02 missing"
-            exit 1
-          fi
+          echo "✅ ZIP found:"
+          echo "$ZIP_FILE"
 
-          echo "Joining ZIP parts..."
+          cp "$ZIP_FILE" website.zip
 
-          cat \
-          SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part01 \
-          SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part02 \
-          > website.zip
-
-          echo "✅ ZIP rebuilt"
-
-          ls -lh website.zip
-
-
-      # =========================
-      # TEST ZIP
-      # =========================
-
+      # 3. Test ZIP
       - name: Test ZIP
         shell: bash
         run: |
           set -e
 
-          echo "Testing ZIP..."
+          echo "===== TESTING ZIP ====="
 
           unzip -t website.zip
 
           echo "✅ ZIP is valid"
 
-
-      # =========================
-      # EXTRACT
-      # =========================
-
-      - name: Extract ZIP
+      # 4. Extract ZIP
+      - name: Extract Website
         shell: bash
         run: |
           set -e
@@ -101,144 +76,138 @@ jobs:
 
           echo "✅ ZIP extracted"
 
-
-      # =========================
-      # FIND ORIGINAL WEBSITE
-      # =========================
-
-      - name: Find Website Root
+      # 5. Find original website root
+      - name: Detect Website Root
         shell: bash
         run: |
           set -e
 
-          echo "Searching for index.html..."
+          echo "===== SEARCHING index.html ====="
 
           INDEX_FILE=$(find extracted \
             -type f \
-            -name "index.html" \
+            -iname "index.html" \
             | head -n 1)
 
           if [ -z "$INDEX_FILE" ]; then
-
             echo "❌ index.html not found"
 
             echo "===== EXTRACTED FILES ====="
-
-            find extracted \
-              -maxdepth 6 \
-              -type f \
-              | sort
+            find extracted -maxdepth 8 -type f | sort
 
             exit 1
           fi
 
-          echo "✅ index.html found:"
+          echo "✅ index.html:"
           echo "$INDEX_FILE"
 
           WEBSITE_ROOT=$(dirname "$INDEX_FILE")
 
-          echo "Website root:"
+          echo "===== WEBSITE ROOT ====="
           echo "$WEBSITE_ROOT"
 
           rm -rf dist
           mkdir -p dist
 
-          # COPY ORIGINAL WEBSITE EXACTLY
+          # Copy original website WITHOUT redesigning it
           cp -a "$WEBSITE_ROOT"/. dist/
 
+          echo "✅ Original website copied"
 
-      # =========================
-      # VERIFY ORIGINAL DESIGN
-      # =========================
-
+      # 6. Verify everything
       - name: Verify Website
         shell: bash
         run: |
           set -e
 
           echo ""
-          echo "===== FINAL WEBSITE ====="
-
-          find dist \
-            -maxdepth 6 \
-            -type f \
-            | sort
-
-          echo ""
+          echo "================================"
+          echo "       WEBSITE CHECK"
+          echo "================================"
 
           if [ ! -f "dist/index.html" ]; then
             echo "❌ index.html missing"
             exit 1
           fi
 
-          echo "✅ Main website found"
+          echo "✅ index.html"
 
+          if [ -f "dist/styles.css" ]; then
+            echo "✅ styles.css"
+          fi
+
+          if [ -f "dist/app.js" ]; then
+            echo "✅ app.js"
+          fi
+
+          if [ -f "dist/config.js" ]; then
+            echo "✅ config.js"
+          fi
 
           if [ -d "dist/admin" ]; then
-            echo "✅ Admin folder found"
-          else
-            echo "⚠️ Admin folder not found"
-          fi
+            echo "✅ admin folder"
 
+            if [ -f "dist/admin/index.html" ]; then
+              echo "✅ admin/index.html"
+            fi
+          else
+            echo "⚠️ admin folder not found"
+          fi
 
           if [ -d "dist/assets" ]; then
-            echo "✅ Assets folder found"
+            echo "✅ assets folder"
           fi
 
+          echo ""
+          echo "===== MEDIA FILES ====="
 
-          VIDEO_FOUND=false
-
-          while IFS= read -r file
-          do
-            echo "🎥 Video: $file"
-            VIDEO_FOUND=true
-          done < <(
-            find dist \
-              -type f \
-              \( \
-                -iname "*.mp4" \
-                -o -iname "*.webm" \
-                -o -iname "*.mov" \
-                -o -iname "*.m4v" \
-              \)
-          )
-
-
-          if [ "$VIDEO_FOUND" = true ]; then
-            echo "✅ Video files found"
-          else
-            echo "ℹ️ No video file detected"
-          fi
-
+          find dist \
+            -type f \
+            \( \
+              -iname "*.mp4" \
+              -o -iname "*.webm" \
+              -o -iname "*.mov" \
+              -o -iname "*.m4v" \
+              -o -iname "*.png" \
+              -o -iname "*.jpg" \
+              -o -iname "*.jpeg" \
+              -o -iname "*.webp" \
+            \) \
+            | sort || true
 
           echo ""
           echo "================================"
-          echo "✅ ORIGINAL WEBSITE READY"
+          echo "       BUILD SUCCESS"
           echo "================================"
 
-
-      # =========================
-      # GITHUB PAGES
-      # =========================
-
+      # 7. Configure GitHub Pages
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-
-      # =========================
-      # UPLOAD
-      # =========================
-
+      # 8. Upload website
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
-
-      # =========================
-      # DEPLOY
-      # =========================
-
+      # 9. Deploy
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # 10. Show URLs
+      - name: Show Website URLs
+        shell: bash
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "       SADEE SOLUTIONS DEPLOYED"
+          echo "=============================================="
+          echo ""
+          echo "Customer Website:"
+          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE/"
+          echo ""
+          echo "Admin Panel:"
+          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE/admin/"
+          echo ""
+          echo "=============================================="
