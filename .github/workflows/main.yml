@@ -1,9 +1,10 @@
-name: SADEE SOLUTIONS - GitHub Pages
+name: SADEE SOLUTIONS - ZIP Deploy
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -11,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: sadee-pages
   cancel-in-progress: true
 
 jobs:
@@ -23,29 +24,96 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify website files
+      - name: Prepare folders
         run: |
-          set -e
-          test -f index.html
-          test -f admin.html
-          test -f app.js
-          test -f styles.css
-          test -f config.js
-          test -f admin.js
-          test -f admin.css
-          test -d assets
-          echo "Customer site and admin page found."
+          mkdir -p extracted
+          mkdir -p dist
+          echo "Repository:"
+          pwd
+          echo "Files:"
+          find . -maxdepth 3 -type f | sort
 
-      - name: Configure GitHub Pages
+      - name: Find ZIP
+        shell: bash
+        run: |
+          ZIP=""
+
+          for f in *.zip; do
+            if [ -f "$f" ]; then
+              ZIP="$f"
+              break
+            fi
+          done
+
+          if [ -z "$ZIP" ]; then
+            ZIP=$(find . -type f -iname "*.zip" \
+              ! -path "./.git/*" \
+              | head -n 1)
+          fi
+
+          if [ -z "$ZIP" ]; then
+            echo "❌ ZIP FILE NOT FOUND"
+            echo "Upload your ZIP file to the repository first."
+            exit 1
+          fi
+
+          echo "✅ ZIP FOUND:"
+          echo "$ZIP"
+
+          echo "ZIP_FILE=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Extract ZIP
+        shell: bash
+        run: |
+          echo "Extracting:"
+          echo "$ZIP_FILE"
+
+          unzip -o "$ZIP_FILE" -d extracted
+
+          echo "✅ Extraction completed"
+          echo "Extracted files:"
+          find extracted -maxdepth 5 -type f | sort
+
+      - name: Find website
+        shell: bash
+        run: |
+          echo "Searching for index.html..."
+
+          INDEX=$(find extracted \
+            -type f \
+            -name "index.html" \
+            | head -n 1)
+
+          if [ -z "$INDEX" ]; then
+            echo "❌ index.html NOT FOUND"
+            echo "Your ZIP must contain index.html"
+            exit 1
+          fi
+
+          echo "✅ index.html found:"
+          echo "$INDEX"
+
+          ROOT=$(dirname "$INDEX")
+
+          echo "Website root:"
+          echo "$ROOT"
+
+          cp -a "$ROOT"/. dist/
+
+          echo "Final website:"
+          find dist -maxdepth 5 -type f | sort
+
+      - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload site
+      - name: Upload Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: ./dist
 
       - name: Deploy
         id: deployment
