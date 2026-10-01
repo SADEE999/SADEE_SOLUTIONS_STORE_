@@ -1,4 +1,4 @@
-name: SADEE SOLUTIONS - ZIP DEPLOY
+name: SADEE SOLUTIONS - RESTORE ORIGINAL
 
 on:
   push:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Rebuild ZIP and Deploy
+    name: Restore Original Website
     runs-on: ubuntu-latest
 
     environment:
@@ -26,54 +26,54 @@ jobs:
 
     steps:
 
-      # =========================
-      # CHECKOUT
-      # =========================
+      # ==============================
+      # CHECKOUT FULL HISTORY
+      # ==============================
 
-      - name: Checkout Repository
+      - name: Checkout Full Git History
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
 
-      # =========================
-      # REBUILD ORIGINAL ZIP
-      # =========================
+      # ==============================
+      # RESTORE ORIGINAL ZIP
+      # ==============================
 
-      - name: Rebuild ZIP From Parts
+      - name: Restore Original Website ZIP
         shell: bash
         run: |
           set -e
 
-          echo "===== ZIP PARTS ====="
+          echo "======================================"
+          echo " RESTORING ORIGINAL WEBSITE"
+          echo "======================================"
 
-          ls -lh *.part* || true
+          ZIP_PATH="SADEE_SOLUTIONS_PRO_MAX_FINAL.zip"
+          ZIP_COMMIT="038c4b4"
 
-          if [ ! -f "SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part01" ]; then
-            echo "❌ Part 01 missing"
-            exit 1
-          fi
+          echo "ZIP:"
+          echo "$ZIP_PATH"
 
-          if [ ! -f "SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part02" ]; then
-            echo "❌ Part 02 missing"
-            exit 1
-          fi
+          echo "COMMIT:"
+          echo "$ZIP_COMMIT"
 
-          echo "Joining ZIP parts..."
+          git show "$ZIP_COMMIT:$ZIP_PATH" > website.zip
 
-          cat \
-          SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part01 \
-          SADEE_SOLUTIONS_STORE_KEEP_OLD_DESIGN.zip.part02 \
-          > website.zip
-
-          echo "✅ ZIP rebuilt"
-
+          echo ""
+          echo "Recovered ZIP:"
           ls -lh website.zip
 
+          test -s website.zip
 
-      # =========================
+          echo "✅ ORIGINAL ZIP RESTORED"
+
+
+      # ==============================
       # TEST ZIP
-      # =========================
+      # ==============================
 
-      - name: Test ZIP
+      - name: Validate ZIP
         shell: bash
         run: |
           set -e
@@ -82,14 +82,14 @@ jobs:
 
           unzip -t website.zip
 
-          echo "✅ ZIP is valid"
+          echo "✅ ZIP VALID"
 
 
-      # =========================
+      # ==============================
       # EXTRACT
-      # =========================
+      # ==============================
 
-      - name: Extract ZIP
+      - name: Extract Original Website
         shell: bash
         run: |
           set -e
@@ -99,12 +99,12 @@ jobs:
 
           unzip -o website.zip -d extracted
 
-          echo "✅ ZIP extracted"
+          echo "✅ Website extracted"
 
 
-      # =========================
-      # FIND ORIGINAL WEBSITE
-      # =========================
+      # ==============================
+      # FIND INDEX
+      # ==============================
 
       - name: Find Website Root
         shell: bash
@@ -115,20 +115,14 @@ jobs:
 
           INDEX_FILE=$(find extracted \
             -type f \
-            -name "index.html" \
+            -iname "index.html" \
             | head -n 1)
 
           if [ -z "$INDEX_FILE" ]; then
-
-            echo "❌ index.html not found"
-
-            echo "===== EXTRACTED FILES ====="
-
-            find extracted \
-              -maxdepth 6 \
-              -type f \
-              | sort
-
+            echo "❌ index.html NOT FOUND"
+            echo ""
+            echo "Extracted files:"
+            find extracted -type f | sort
             exit 1
           fi
 
@@ -143,91 +137,101 @@ jobs:
           rm -rf dist
           mkdir -p dist
 
-          # COPY ORIGINAL WEBSITE EXACTLY
           cp -a "$WEBSITE_ROOT"/. dist/
 
+          echo "✅ Website copied to dist"
 
-      # =========================
-      # VERIFY ORIGINAL DESIGN
-      # =========================
+
+      # ==============================
+      # CHECK WEBSITE
+      # ==============================
 
       - name: Verify Website
         shell: bash
         run: |
           set -e
 
-          echo ""
-          echo "===== FINAL WEBSITE ====="
+          echo "======================================"
+          echo " WEBSITE CHECK"
+          echo "======================================"
 
-          find dist \
-            -maxdepth 6 \
-            -type f \
-            | sort
+          test -f dist/index.html
 
-          echo ""
+          echo "✅ index.html"
 
-          if [ ! -f "dist/index.html" ]; then
-            echo "❌ index.html missing"
+          if [ -f dist/styles.css ]; then
+            echo "✅ styles.css"
+          fi
+
+          if [ -f dist/app.js ]; then
+            echo "✅ app.js"
+          fi
+
+          if [ -f dist/config.js ]; then
+            echo "✅ config.js"
+          fi
+
+
+      # ==============================
+      # CHECK ADMIN
+      # ==============================
+
+      - name: Verify Admin Panel
+        shell: bash
+        run: |
+          set -e
+
+          echo "======================================"
+          echo " ADMIN PANEL CHECK"
+          echo "======================================"
+
+          if [ ! -d "dist/admin" ]; then
+            echo "❌ admin folder missing"
+            echo ""
+            echo "Folders found:"
+            find dist -maxdepth 3 -type d | sort
             exit 1
           fi
 
-          echo "✅ Main website found"
+          echo "✅ admin folder"
 
+          if [ ! -f "dist/admin/index.html" ]; then
+            echo "❌ admin/index.html missing"
+            exit 1
+          fi
 
-          if [ -d "dist/admin" ]; then
-            echo "✅ Admin folder found"
-          else
-            echo "⚠️ Admin folder not found"
+          echo "✅ admin/index.html"
+
+          if [ -f "dist/admin/admin.js" ]; then
+            echo "✅ admin/admin.js"
+          fi
+
+          if [ -f "dist/admin/admin.css" ]; then
+            echo "✅ admin/admin.css"
           fi
 
 
-          if [ -d "dist/assets" ]; then
-            echo "✅ Assets folder found"
-          fi
+      # ==============================
+      # SHOW FILES
+      # ==============================
+
+      - name: Show Website Files
+        shell: bash
+        run: |
+          echo "======================================"
+          echo " WEBSITE FILES"
+          echo "======================================"
+
+          find dist -maxdepth 5 -type f | sort
 
 
-          VIDEO_FOUND=false
-
-          while IFS= read -r file
-          do
-            echo "🎥 Video: $file"
-            VIDEO_FOUND=true
-          done < <(
-            find dist \
-              -type f \
-              \( \
-                -iname "*.mp4" \
-                -o -iname "*.webm" \
-                -o -iname "*.mov" \
-                -o -iname "*.m4v" \
-              \)
-          )
-
-
-          if [ "$VIDEO_FOUND" = true ]; then
-            echo "✅ Video files found"
-          else
-            echo "ℹ️ No video file detected"
-          fi
-
-
-          echo ""
-          echo "================================"
-          echo "✅ ORIGINAL WEBSITE READY"
-          echo "================================"
-
-
-      # =========================
+      # ==============================
       # GITHUB PAGES
-      # =========================
+      # ==============================
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-
-      # =========================
-      # UPLOAD
-      # =========================
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
@@ -235,10 +239,30 @@ jobs:
           path: ./dist
 
 
-      # =========================
-      # DEPLOY
-      # =========================
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+
+      # ==============================
+      # DONE
+      # ==============================
+
+      - name: Deployment Complete
+        shell: bash
+        run: |
+          echo ""
+          echo "=============================================="
+          echo " SADEE SOLUTIONS RESTORED"
+          echo "=============================================="
+
+          echo ""
+          echo "CUSTOMER WEBSITE:"
+          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE_/"
+
+          echo ""
+          echo "ADMIN PANEL:"
+          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE_/admin/"
+
+          echo ""
+          echo "=============================================="
