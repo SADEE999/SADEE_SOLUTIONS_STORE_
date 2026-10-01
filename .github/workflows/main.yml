@@ -1,4 +1,4 @@
-name: SADEE SOLUTIONS PRO MAX - Deploy
+name: SADEE SOLUTIONS - Restore & Deploy
 
 on:
   push:
@@ -12,12 +12,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: sadee-solutions-pro-max
+  group: sadee-solutions-pages
   cancel-in-progress: true
 
 jobs:
   deploy:
-    name: Build & Deploy PRO MAX
+    name: Restore Website & Deploy
     runs-on: ubuntu-latest
 
     environment:
@@ -26,61 +26,85 @@ jobs:
 
     steps:
 
-      - name: Checkout Repository
+      # ==========================================
+      # 1. GET FULL GIT HISTORY
+      # ==========================================
+      - name: Checkout Full Repository History
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # --------------------------------------------------
-      # FIND ZIP
-      # --------------------------------------------------
-      - name: Find PRO MAX ZIP
+      # ==========================================
+      # 2. FIND OLD WEBSITE ZIP FROM GIT HISTORY
+      # ==========================================
+      - name: Find Website ZIP In Git History
         shell: bash
         run: |
           set -e
 
-          echo "===================================="
-          echo " SEARCHING FOR WEBSITE ZIP"
-          echo "===================================="
+          echo "=========================================="
+          echo " SEARCHING GIT HISTORY FOR WEBSITE ZIP"
+          echo "=========================================="
 
-          find . -maxdepth 3 -type f | sort
-
-          ZIP_FILE=$(find . \
-            -maxdepth 3 \
-            -type f \
-            -iname "*.zip" \
+          ZIP_PATH=$(git log --all \
+            --name-only \
+            --pretty=format: \
+            --diff-filter=A \
+            -- '*.zip' \
+            | sed '/^$/d' \
             | head -n 1)
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "❌ No ZIP file found."
+          if [ -z "$ZIP_PATH" ]; then
+            echo "❌ No ZIP found in Git history."
+            echo ""
+            echo "ZIP files currently known:"
+            git log --all --name-only --pretty=format: -- '*.zip' \
+              | sed '/^$/d' \
+              | sort -u || true
             exit 1
           fi
 
-          echo "✅ ZIP FOUND:"
-          echo "$ZIP_FILE"
+          echo "✅ ZIP path found:"
+          echo "$ZIP_PATH"
 
-          cp "$ZIP_FILE" website.zip
+          echo "ZIP introduction commit:"
+          ZIP_COMMIT=$(git log --all \
+            --format='%H' \
+            --diff-filter=A \
+            -- "$ZIP_PATH" \
+            | head -n 1)
 
+          if [ -z "$ZIP_COMMIT" ]; then
+            echo "❌ Could not find ZIP commit."
+            exit 1
+          fi
+
+          echo "$ZIP_COMMIT"
+
+          git show "$ZIP_COMMIT:$ZIP_PATH" > website.zip
+
+          echo ""
+          echo "Recovered ZIP:"
           ls -lh website.zip
 
-      # --------------------------------------------------
-      # TEST ZIP
-      # --------------------------------------------------
-      - name: Validate ZIP
+      # ==========================================
+      # 3. TEST ZIP
+      # ==========================================
+      - name: Validate Website ZIP
         shell: bash
         run: |
           set -e
 
-          echo "===================================="
-          echo " VALIDATING ZIP"
-          echo "===================================="
+          echo "Testing ZIP..."
 
           unzip -t website.zip
 
-          echo "✅ ZIP validation successful"
+          echo "✅ ZIP is valid."
 
-      # --------------------------------------------------
-      # EXTRACT
-      # --------------------------------------------------
-      - name: Extract PRO MAX Website
+      # ==========================================
+      # 4. EXTRACT WEBSITE
+      # ==========================================
+      - name: Extract Website
         shell: bash
         run: |
           set -e
@@ -90,19 +114,17 @@ jobs:
 
           unzip -o website.zip -d extracted
 
-          echo "✅ Website extracted"
+          echo "✅ Website extracted."
 
-      # --------------------------------------------------
-      # FIND INDEX
-      # --------------------------------------------------
+      # ==========================================
+      # 5. FIND INDEX.HTML
+      # ==========================================
       - name: Detect Website Root
         shell: bash
         run: |
           set -e
 
-          echo "===================================="
-          echo " SEARCHING FOR INDEX.HTML"
-          echo "===================================="
+          echo "Searching for index.html..."
 
           INDEX_FILE=$(find extracted \
             -type f \
@@ -110,15 +132,11 @@ jobs:
             | head -n 1)
 
           if [ -z "$INDEX_FILE" ]; then
-            echo "❌ index.html was not found."
+            echo "❌ index.html not found."
 
             echo ""
-            echo "===== EXTRACTED FILES ====="
-
-            find extracted \
-              -maxdepth 8 \
-              -type f \
-              | sort
+            echo "Extracted files:"
+            find extracted -type f | sort
 
             exit 1
           fi
@@ -135,22 +153,22 @@ jobs:
           rm -rf dist
           mkdir -p dist
 
-          # Preserve the uploaded website files exactly.
           cp -a "$WEBSITE_ROOT"/. dist/
 
-          echo "✅ Website copied to dist"
+          echo ""
+          echo "✅ Website copied to dist."
 
-      # --------------------------------------------------
-      # VERIFY CUSTOMER SITE
-      # --------------------------------------------------
-      - name: Verify Customer Website
+      # ==========================================
+      # 6. VERIFY WEBSITE
+      # ==========================================
+      - name: Verify Website
         shell: bash
         run: |
           set -e
 
-          echo "===================================="
-          echo " CUSTOMER WEBSITE CHECK"
-          echo "===================================="
+          echo "=========================================="
+          echo " WEBSITE CHECK"
+          echo "=========================================="
 
           test -f dist/index.html
 
@@ -168,120 +186,54 @@ jobs:
             echo "✅ config.js"
           fi
 
-          if [ -f dist/supabase.sql ]; then
-            echo "✅ supabase.sql"
+          if [ -d dist/admin ]; then
+            echo "✅ admin folder"
           fi
 
-      # --------------------------------------------------
-      # VERIFY ADMIN
-      # --------------------------------------------------
-      - name: Verify Admin Panel
-        shell: bash
-        run: |
-          set -e
-
-          echo "===================================="
-          echo " ADMIN PANEL CHECK"
-          echo "===================================="
-
-          if [ ! -d "dist/admin" ]; then
-            echo "❌ admin folder missing"
-            exit 1
+          if [ -f dist/admin/index.html ]; then
+            echo "✅ admin/index.html"
           fi
-
-          echo "✅ admin folder"
-
-          if [ ! -f "dist/admin/index.html" ]; then
-            echo "❌ admin/index.html missing"
-            exit 1
-          fi
-
-          echo "✅ admin/index.html"
-
-          if [ -f "dist/admin/admin.js" ]; then
-            echo "✅ admin/admin.js"
-          fi
-
-          if [ -f "dist/admin/admin.css" ]; then
-            echo "✅ admin/admin.css"
-          fi
-
-      # --------------------------------------------------
-      # CHECK MEDIA
-      # --------------------------------------------------
-      - name: Verify Images & Videos
-        shell: bash
-        run: |
-          set -e
-
-          echo "===================================="
-          echo " MEDIA CHECK"
-          echo "===================================="
 
           echo ""
-          echo "Images:"
+          echo "Website files:"
+          find dist -maxdepth 3 -type f | sort
 
-          find dist \
-            -type f \
-            \( \
-              -iname "*.png" \
-              -o -iname "*.jpg" \
-              -o -iname "*.jpeg" \
-              -o -iname "*.webp" \
-              -o -iname "*.gif" \
-              -o -iname "*.svg" \
-            \) \
-            | sort || true
-
-          echo ""
-          echo "Videos:"
-
-          find dist \
-            -type f \
-            \( \
-              -iname "*.mp4" \
-              -o -iname "*.webm" \
-              -o -iname "*.mov" \
-              -o -iname "*.m4v" \
-            \) \
-            | sort || true
-
-      # --------------------------------------------------
-      # CONFIGURE PAGES
-      # --------------------------------------------------
+      # ==========================================
+      # 7. CONFIGURE GITHUB PAGES
+      # ==========================================
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      # --------------------------------------------------
-      # UPLOAD ARTIFACT
-      # --------------------------------------------------
+      # ==========================================
+      # 8. UPLOAD WEBSITE
+      # ==========================================
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
-      # --------------------------------------------------
-      # DEPLOY
-      # --------------------------------------------------
+      # ==========================================
+      # 9. DEPLOY
+      # ==========================================
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
 
-      # --------------------------------------------------
-      # FINAL STATUS
-      # --------------------------------------------------
+      # ==========================================
+      # 10. FINAL STATUS
+      # ==========================================
       - name: Deployment Complete
         shell: bash
         run: |
           echo ""
-          echo "=============================================="
-          echo "     SADEE SOLUTIONS PRO MAX LIVE"
-          echo "=============================================="
+          echo "=========================================="
+          echo " SADEE SOLUTIONS WEBSITE LIVE"
+          echo "=========================================="
           echo ""
-          echo "🌐 CUSTOMER WEBSITE:"
-          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE/"
+          echo "Customer Website:"
+          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE_/"
           echo ""
-          echo "🔐 ADMIN PANEL:"
-          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE/admin/"
+          echo "Admin Panel:"
+          echo "https://sadee999.github.io/SADEE_SOLUTIONS_STORE_/admin/"
           echo ""
-          echo "=============================================="
+          echo "=========================================="
