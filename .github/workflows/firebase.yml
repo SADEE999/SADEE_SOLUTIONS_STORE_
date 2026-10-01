@@ -26,11 +26,35 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
-      - name: Prepare website
+      - name: Find website
         run: |
-          mkdir -p firebase-public
-          cp -r index.html styles.css app.js config.js firebase-public/ 2>/dev/null || true
-          cp -r assets images img public firebase-public/ 2>/dev/null || true
+          echo "Searching for index.html..."
+          find . -type f -name "index.html" \
+            -not -path "./.git/*" \
+            -not -path "./firebase-public/*"
+
+      - name: Prepare Firebase website
+        run: |
+          rm -rf firebase-public
+          mkdir firebase-public
+
+          INDEX=$(find . -type f -name "index.html" \
+            -not -path "./.git/*" \
+            -not -path "./firebase-public/*" | head -n 1)
+
+          if [ -z "$INDEX" ]; then
+            echo "ERROR: index.html was not found!"
+            exit 1
+          fi
+
+          echo "Using: $INDEX"
+
+          SITE_DIR=$(dirname "$INDEX")
+
+          cp -R "$SITE_DIR"/. firebase-public/
+
+          echo "Firebase files:"
+          find firebase-public -maxdepth 2 -type f
 
       - name: Create Firebase config
         run: |
@@ -49,10 +73,18 @@ jobs:
           }
           EOF
 
+      - name: Verify website
+        run: |
+          test -f firebase-public/index.html
+          echo "index.html FOUND ✅"
+
       - name: Deploy to Firebase
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          firebase deploy --only hosting --project sadeexdima
+
+          firebase deploy \
+            --only hosting \
+            --project sadeexdima
